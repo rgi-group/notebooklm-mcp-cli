@@ -13,25 +13,30 @@ from ._utils import ResultDict, coerce_list, error_result, get_client, logged_to
 # valid check is reused. Callers that need an immediate re-check (tests,
 # refresh_auth) can reset this to 0.
 #
-# `_auth_guard_mtime` records the auth cache file's mtime at the moment the
-# guard was populated. If the file changes on disk (e.g. `nlm login` rewrites
-# it while the server is running), the next call sees a different mtime and
-# invalidates the guard even if the TTL has not elapsed. This closes the
-# remaining stale-TTL window where auth could flip from valid to invalid
-# during the cached window and the guard would otherwise skip the re-check.
+# `_auth_guard_mtime` records the latest mtime of the active auth storage
+# (modern multi-profile cookies.json OR the legacy auth.json, whichever is
+# newer) at the moment the guard was populated. If a login flow rewrites
+# either file while the server is running, the next call sees a different
+# mtime and invalidates the guard even if the TTL has not elapsed. This
+# closes the remaining stale-TTL window where auth could flip from valid
+# to invalid during the cached window and the guard would otherwise skip
+# the re-check.
 _auth_guard_expires: float = 0.0
 _auth_guard_mtime: float = 0.0
 _AUTH_GUARD_TTL: float = 60.0
 
 
 def _get_auth_file_mtime() -> float:
-    """Return the mtime of the active auth cache file, or 0.0 if missing."""
-    try:
-        from ...core.auth import get_cache_path
+    """Thin wrapper around `services.auth.get_active_auth_mtime`.
 
-        return get_cache_path().stat().st_mtime
-    except (OSError, FileNotFoundError):
-        return 0.0
+    Kept as a module-level function so the existing tests in
+    `tests/test_mcp_auth_studio_failures.py` that monkeypatch
+    `studio_tools._get_auth_file_mtime` continue to work without
+    having to also patch the shim.
+    """
+    from ...services.auth import get_active_auth_mtime
+
+    return get_active_auth_mtime()
 
 
 def _normalize_studio_validation_error(message: str) -> str:

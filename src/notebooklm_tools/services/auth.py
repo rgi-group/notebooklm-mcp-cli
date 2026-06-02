@@ -73,6 +73,46 @@ def validate_cookies(cookies):
     return _core_auth.validate_cookies(cookies)
 
 
+def get_active_auth_mtime() -> float:
+    """Return the most recent mtime of the active auth storage, or 0.0.
+
+    The CLI/MCP codebase stores auth in two locations:
+
+    - **Modern (multi-profile):** `~/.notebooklm-mcp-cli/profiles/<name>/cookies.json`,
+      where `<name>` is the active profile from the config.
+    - **Legacy (single-profile):** `~/.notebooklm-mcp-cli/auth.json` (no profile).
+
+    Both can exist simultaneously during migration. This function stats both
+    (whichever the current layout uses) and returns the latest mtime, so a
+    change to either file invalidates a caller-side cache. Returns 0.0 if
+    no auth file exists yet, which is the same sentinel the rest of the
+    auth-guard machinery uses for "no cache yet".
+
+    Catches all exceptions and returns 0.0 on error: this is a best-effort
+    cache-invalidation hint, never a hard failure. A wrong answer is far
+    less harmful than a 500 on `studio_create`.
+    """
+    try:
+        import contextlib
+
+        from notebooklm_tools.utils.config import get_config, get_profile_dir, get_storage_dir
+
+        cfg = get_config()
+        profile = cfg.auth.default_profile
+        candidates = (
+            get_profile_dir(profile) / "cookies.json",
+            get_storage_dir() / "auth.json",
+        )
+
+        latest = 0.0
+        for path in candidates:
+            with contextlib.suppress(OSError, FileNotFoundError):
+                latest = max(latest, path.stat().st_mtime)
+        return latest
+    except Exception:
+        return 0.0
+
+
 _LAZY_CLASS_NAMES = frozenset({"AuthTokens", "AuthManager"})
 
 

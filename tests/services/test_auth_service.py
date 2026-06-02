@@ -159,3 +159,171 @@ def test_shim_class_resolution_does_not_cache_across_patches(monkeypatch):
         "PEP 562 lookup must re-resolve on every access; a cache would "
         "leak the first patched class into the second access."
     )
+
+
+# --------------------------------------------------------------------------- #
+# get_active_auth_mtime — guards the auth-guard mtime check against the
+# real auth-file layout (modern multi-profile vs. legacy single-file).
+# --------------------------------------------------------------------------- #
+def test_get_active_auth_mtime_reads_modern_profile_cookies(monkeypatch, tmp_path):
+    """Modern users have auth in `profiles/<name>/cookies.json`. The mtime
+    helper must stat THAT file, not the legacy `auth.json`.
+    """
+    import time as _time
+    from types import SimpleNamespace
+
+    profile_dir = tmp_path / "profiles" / "personal"
+    profile_dir.mkdir(parents=True)
+    cookies_file = profile_dir / "cookies.json"
+    cookies_file.write_text("{}")
+    expected_mtime = cookies_file.stat().st_mtime
+
+    monkeypatch.setattr(
+        "notebooklm_tools.utils.config.get_config",
+        lambda: SimpleNamespace(auth=SimpleNamespace(default_profile="personal")),
+        raising=True,
+    )
+    monkeypatch.setattr(
+        "notebooklm_tools.utils.config.get_profile_dir",
+        lambda name: tmp_path / "profiles" / name,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        "notebooklm_tools.utils.config.get_storage_dir",
+        lambda: tmp_path,
+        raising=True,
+    )
+
+    assert services_auth.get_active_auth_mtime() == expected_mtime
+    # Sanity: a slightly later read (no file change) returns the same mtime.
+    _time.sleep(0.01)
+    assert services_auth.get_active_auth_mtime() == expected_mtime
+
+
+def test_get_active_auth_mtime_falls_back_to_legacy_auth_json(monkeypatch, tmp_path):
+    """Legacy users have auth in `<storage>/auth.json` with no profile dir.
+    The mtime helper must stat that file when the modern path doesn't exist.
+    """
+    from types import SimpleNamespace
+
+    legacy_file = tmp_path / "auth.json"
+    legacy_file.write_text("{}")
+    expected_mtime = legacy_file.stat().st_mtime
+
+    # get_profile_dir returns a non-existent dir (no modern profile).
+    empty_profile_dir = tmp_path / "profiles" / "default"
+    empty_profile_dir.mkdir(parents=True)
+    # No cookies.json inside the profile dir — modern path is absent.
+
+    monkeypatch.setattr(
+        "notebooklm_tools.utils.config.get_config",
+        lambda: SimpleNamespace(auth=SimpleNamespace(default_profile="default")),
+        raising=True,
+    )
+    monkeypatch.setattr(
+        "notebooklm_tools.utils.config.get_profile_dir",
+        lambda name: empty_profile_dir,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        "notebooklm_tools.utils.config.get_storage_dir",
+        lambda: tmp_path,
+        raising=True,
+    )
+
+    assert services_auth.get_active_auth_mtime() == expected_mtime
+
+
+def test_get_active_auth_mtime_returns_max_when_both_exist(monkeypatch, tmp_path):
+    """During migration, both the legacy and modern files may exist. The
+    mtime helper must return the LARGER mtime so a write to EITHER file
+    invalidates the guard.
+    """
+    import time as _time
+    from types import SimpleNamespace
+
+    profile_dir = tmp_path / "profiles" / "personal"
+    profile_dir.mkdir(parents=True)
+    cookies_file = profile_dir / "cookies.json"
+    cookies_file.write_text("{}")
+    legacy_file = tmp_path / "auth.json"
+    legacy_file.write_text("{}")
+
+    # Make the legacy file strictly newer.
+    _time.sleep(0.02)
+    legacy_file.touch()
+
+    legacy_mtime = legacy_file.stat().st_mtime
+    cookies_mtime = cookies_file.stat().st_mtime
+    assert legacy_mtime > cookies_mtime
+
+    monkeypatch.setattr(
+        "notebooklm_tools.utils.config.get_config",
+        lambda: SimpleNamespace(auth=SimpleNamespace(default_profile="personal")),
+        raising=True,
+    )
+    monkeypatch.setattr(
+        "notebooklm_tools.utils.config.get_profile_dir",
+        lambda name: tmp_path / "profiles" / name,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        "notebooklm_tools.utils.config.get_storage_dir",
+        lambda: tmp_path,
+        raising=True,
+    )
+
+    assert services_auth.get_active_auth_mtime() == legacy_mtime
+    # Now make cookies.json the newer one. The result must follow.
+    _time.sleep(0.02)
+    cookies_file.touch()
+    new_cookies_mtime = cookies_file.stat().st_mtime
+    assert new_cookies_mtime > legacy_mtime
+    assert services_auth.get_active_auth_mtime() == new_cookies_mtime
+
+
+def test_get_active_auth_mtime_returns_zero_when_no_files(monkeypatch, tmp_path):
+    """Fresh install with no auth file at all must return 0.0 (sentinel for
+    'no cache yet'), not raise. This keeps first-call behavior consistent.
+    """
+    from types import SimpleNamespace
+
+    empty_profile_dir = tmp_path / "profiles" / "default"
+    empty_profile_dir.mkdir(parents=True)
+
+    monkeypatch.setattr(
+        "notebooklm_tools.utils.config.get_config",
+        lambda: SimpleNamespace(auth=SimpleNamespace(default_profile="default")),
+        raising=True,
+    )
+    monkeypatch.setattr(
+        "notebooklm_tools.utils.config.get_profile_dir",
+        lambda name: empty_profile_dir,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        "notebooklm_tools.utils.config.get_storage_dir",
+        lambda: tmp_path,
+        raising=True,
+    )
+
+    assert services_auth.get_active_auth_mtime() == 0.0
+
+
+def test_get_active_auth_mtime_swallows_exceptions(monkeypatch):
+    """If config loading blows up (corrupt config, missing dir perms, etc.)
+    the helper must return 0.0 instead of propagating. A wrong mtime answer
+    is far less harmful than a 500 on `studio_create` for an unrelated
+    config error.
+    """
+
+    def _explode():
+        raise RuntimeError("config corrupted")
+
+    monkeypatch.setattr(
+        "notebooklm_tools.utils.config.get_config",
+        _explode,
+        raising=True,
+    )
+
+    assert services_auth.get_active_auth_mtime() == 0.0
