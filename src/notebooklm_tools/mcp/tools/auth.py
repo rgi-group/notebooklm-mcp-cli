@@ -37,7 +37,7 @@ def refresh_auth() -> ResultDict:
             )
 
         # Try reloading from disk first
-        from notebooklm_tools.core.auth import load_cached_tokens
+        from notebooklm_tools.services.auth import load_cached_tokens
 
         cached = load_cached_tokens()
         if cached:
@@ -108,7 +108,11 @@ def save_auth_tokens(
         request_url: Optional - contains session ID if extracting manually
     """
     try:
-        from notebooklm_tools.core.auth import AuthTokens, get_cache_path, save_tokens_to_cache
+        from notebooklm_tools.services.auth import (
+            AuthTokens,
+            get_cache_path,
+            save_tokens_to_cache,
+        )
 
         # Parse cookie string to dict
         all_cookies = {}

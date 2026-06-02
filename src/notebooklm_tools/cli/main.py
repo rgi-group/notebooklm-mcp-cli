@@ -183,9 +183,9 @@ def login_callback(
 
     To switch active accounts, run `nlm login switch <profile>`.
     """
-    from notebooklm_tools.core.auth import AuthManager
     from notebooklm_tools.core.errors import ClientAuthenticationError
     from notebooklm_tools.core.exceptions import AccountMismatchError, NLMError
+    from notebooklm_tools.services.auth import AuthManager
     from notebooklm_tools.utils.config import get_config
 
     # If a subcommand is invoked, don't run login logic
@@ -543,7 +543,7 @@ def login_callback(
 @profile_app.command("list")
 def profile_list() -> None:
     """List all authentication profiles."""
-    from notebooklm_tools.core.auth import AuthManager
+    from notebooklm_tools.services.auth import AuthManager
 
     profiles = AuthManager.list_profiles()
 
@@ -574,7 +574,7 @@ def profile_delete(
     ),
 ) -> None:
     """Delete a profile and its credentials."""
-    from notebooklm_tools.core.auth import AuthManager
+    from notebooklm_tools.services.auth import AuthManager
 
     auth = AuthManager(profile)
 
@@ -599,8 +599,8 @@ def profile_rename(
     new_name: str = typer.Argument(..., help="New profile name"),
 ) -> None:
     """Rename an authentication profile."""
-    from notebooklm_tools.core.auth import AuthManager
     from notebooklm_tools.core.exceptions import NLMError
+    from notebooklm_tools.services.auth import AuthManager
 
     # Check if old profile exists
     old_auth = AuthManager(old_name)
@@ -643,7 +643,7 @@ def login_switch(
     profile: str = typer.Argument(..., help="Profile name to switch to"),
 ) -> None:
     """Switch the default profile for all commands."""
-    from notebooklm_tools.core.auth import AuthManager
+    from notebooklm_tools.services.auth import AuthManager
     from notebooklm_tools.utils.config import get_config, save_config
 
     # Check if profile exists
