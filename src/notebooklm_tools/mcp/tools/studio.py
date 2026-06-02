@@ -12,8 +12,26 @@ from ._utils import ResultDict, coerce_list, error_result, get_client, logged_to
 # at most once per _AUTH_GUARD_TTL seconds; within that window the previous
 # valid check is reused. Callers that need an immediate re-check (tests,
 # refresh_auth) can reset this to 0.
+#
+# `_auth_guard_mtime` records the auth cache file's mtime at the moment the
+# guard was populated. If the file changes on disk (e.g. `nlm login` rewrites
+# it while the server is running), the next call sees a different mtime and
+# invalidates the guard even if the TTL has not elapsed. This closes the
+# remaining stale-TTL window where auth could flip from valid to invalid
+# during the cached window and the guard would otherwise skip the re-check.
 _auth_guard_expires: float = 0.0
+_auth_guard_mtime: float = 0.0
 _AUTH_GUARD_TTL: float = 60.0
+
+
+def _get_auth_file_mtime() -> float:
+    """Return the mtime of the active auth cache file, or 0.0 if missing."""
+    try:
+        from ...core.auth import get_cache_path
+
+        return get_cache_path().stat().st_mtime
+    except (OSError, FileNotFoundError):
+        return 0.0
 
 
 def _normalize_studio_validation_error(message: str) -> str:
@@ -155,18 +173,24 @@ def studio_create(
     # Pre-flight auth gate: fail loudly NOW rather than returning a fake
     # success with an artifact_id that silently fails seconds later.
     # The TTL guard avoids an HTTP round-trip on every call; we check at most
-    # once per minute. On a cache miss we do a live fetch AND save the result
-    # so the next get_client() skips its own re-fetch (CSRF is on disk).
+    # once per minute. The mtime guard additionally invalidates the cache if
+    # the auth file changed on disk (e.g. `nlm login` rewrote it externally
+    # during the cached window), so a stale-TTL window can't skip the re-check
+    # when the user just refreshed their tokens.
+    # On a cache miss we do a live fetch AND save the result so the next
+    # get_client() skips its own re-fetch (CSRF is on disk).
     # On a failed check we also clear the guard so the next call retries
     # immediately instead of waiting up to 60s for the TTL to expire.
-    global _auth_guard_expires
+    global _auth_guard_expires, _auth_guard_mtime
     _now = _time.monotonic()
-    if _now >= _auth_guard_expires:
-        from notebooklm_tools.core.auth import check_auth
+    _current_mtime = _get_auth_file_mtime()
+    if _now >= _auth_guard_expires or _current_mtime != _auth_guard_mtime:
+        from ...services.auth import check_auth
 
         auth = check_auth(live=True)
         if not auth.valid:
             _auth_guard_expires = 0.0
+            _auth_guard_mtime = 0.0
             return error_result(
                 f"Cannot create {artifact_type}: NotebookLM auth is not valid "
                 f"(reason: {auth.reason}). Run `nlm login` in a terminal to "
@@ -176,6 +200,7 @@ def studio_create(
                 reason=auth.reason,
             )
         _auth_guard_expires = _now + _AUTH_GUARD_TTL
+        _auth_guard_mtime = _current_mtime
 
     try:
         client = get_client()

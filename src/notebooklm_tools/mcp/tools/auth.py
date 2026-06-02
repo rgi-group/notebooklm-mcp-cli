@@ -45,7 +45,7 @@ def refresh_auth() -> ResultDict:
             # re-auth if those tokens are already dead. Validate live before
             # creating any client, otherwise agents loop on doomed studio calls
             # (and we leave a client object initialized with bad tokens behind).
-            from notebooklm_tools.core.auth import check_auth
+            from notebooklm_tools.services.auth import check_auth
 
             check = check_auth(live=True)
             if not check.valid:

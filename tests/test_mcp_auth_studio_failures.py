@@ -322,3 +322,85 @@ def test_studio_create_resets_auth_guard_on_invalid_auth(monkeypatch):
     assert studio_tools._auth_guard_expires == 0.0, (
         f"auth-guard should be reset to 0 on invalid auth, got: {studio_tools._auth_guard_expires}"
     )
+
+
+def test_studio_create_invalidates_auth_guard_when_auth_file_changes(monkeypatch):
+    """If the auth cache file's mtime changes on disk (e.g. `nlm login`
+    rewrote it during the cached window), the auth-guard must be invalidated
+    even if the TTL has not elapsed. Without this, a stale-TTL window could
+    skip the re-check when the user just refreshed their tokens.
+    """
+    check_call_count = {"n": 0}
+
+    def _counting_check_auth(**_kw):
+        check_call_count["n"] += 1
+        return _auth_result(True)
+
+    # First call: mtime=N. Guard populated with mtime=N.
+    monkeypatch.setattr(studio_tools, "_get_auth_file_mtime", lambda: 1000.0, raising=True)
+    monkeypatch.setattr(core_auth, "check_auth", _counting_check_auth, raising=True)
+    monkeypatch.setattr(studio_tools, "get_client", lambda: _FakeClient(), raising=True)
+    monkeypatch.setattr(
+        studio_tools.studio_service,
+        "create_artifact",
+        lambda *a, **k: {"artifact_id": "art-1", "status": "in_progress"},
+        raising=True,
+    )
+
+    studio_tools._auth_guard_expires = 0.0  # force guard expired so check runs
+    studio_tools._auth_guard_mtime = 0.0
+    studio_tools.studio_create(notebook_id="nb-123", artifact_type="infographic", confirm=True)
+    assert check_call_count["n"] == 1
+    # Guard is now valid (mtime=1000, TTL=60s).
+    assert studio_tools._auth_guard_mtime == 1000.0
+    assert studio_tools._auth_guard_expires > 0
+
+    # Second call: same mtime, TTL still valid. Guard should hold — check must NOT run.
+    studio_tools.studio_create(notebook_id="nb-123", artifact_type="infographic", confirm=True)
+    assert check_call_count["n"] == 1, "Guard should have held; check ran anyway."
+
+    # Third call: mtime changed (e.g. `nlm login` rewrote the file). Guard MUST
+    # invalidate even though TTL is still valid. This is the bug class this
+    # test pins: the TTL cache would otherwise skip the re-check.
+    monkeypatch.setattr(studio_tools, "_get_auth_file_mtime", lambda: 2000.0, raising=True)
+    studio_tools.studio_create(notebook_id="nb-123", artifact_type="infographic", confirm=True)
+    assert check_call_count["n"] == 2, (
+        "Mtime change must invalidate the guard and trigger a re-check."
+    )
+    assert studio_tools._auth_guard_mtime == 2000.0
+
+
+def test_studio_create_invalidates_auth_guard_when_auth_file_appears(monkeypatch):
+    """If the auth file is missing at guard-set time and later appears
+    (mtime goes from 0.0 to N), the guard must invalidate.
+    """
+    check_call_count = {"n": 0}
+
+    def _counting_check_auth(**_kw):
+        check_call_count["n"] += 1
+        return _auth_result(True)
+
+    # First call: file does not exist (mtime=0.0). Guard populated with mtime=0.0.
+    monkeypatch.setattr(studio_tools, "_get_auth_file_mtime", lambda: 0.0, raising=True)
+    monkeypatch.setattr(core_auth, "check_auth", _counting_check_auth, raising=True)
+    monkeypatch.setattr(studio_tools, "get_client", lambda: _FakeClient(), raising=True)
+    monkeypatch.setattr(
+        studio_tools.studio_service,
+        "create_artifact",
+        lambda *a, **k: {"artifact_id": "art-1", "status": "in_progress"},
+        raising=True,
+    )
+
+    studio_tools._auth_guard_expires = 0.0
+    studio_tools._auth_guard_mtime = 0.0
+    studio_tools.studio_create(notebook_id="nb-123", artifact_type="infographic", confirm=True)
+    assert check_call_count["n"] == 1
+
+    # Second call: same mtime (still 0.0), TTL still valid. Guard holds.
+    studio_tools.studio_create(notebook_id="nb-123", artifact_type="infographic", confirm=True)
+    assert check_call_count["n"] == 1
+
+    # Third call: file now exists (mtime=500.0). Guard MUST invalidate.
+    monkeypatch.setattr(studio_tools, "_get_auth_file_mtime", lambda: 500.0, raising=True)
+    studio_tools.studio_create(notebook_id="nb-123", artifact_type="infographic", confirm=True)
+    assert check_call_count["n"] == 2, "File appearance must invalidate the guard."
