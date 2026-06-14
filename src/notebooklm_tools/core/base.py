@@ -829,6 +829,31 @@ class BaseClient:
             # Fall through to auth recovery below
             pass
 
+        except ResourceExhaustedError:
+            # RPC-level rate limit (HTTP 200, error code 8). Back off and retry.
+            if _server_retry < DEFAULT_MAX_RETRIES:
+                import time as _time
+
+                delay = min(DEFAULT_BASE_DELAY * (2**_server_retry), DEFAULT_MAX_DELAY)
+                logger.warning(
+                    "RPC rate limit (RESOURCE_EXHAUSTED) on %s, attempt %d/%d, retrying in %.1fs...",
+                    rpc_id,
+                    _server_retry + 1,
+                    DEFAULT_MAX_RETRIES + 1,
+                    delay,
+                )
+                _time.sleep(delay)
+                return self._call_rpc(
+                    rpc_id,
+                    params,
+                    path,
+                    timeout,
+                    _retry,
+                    _deep_retry,
+                    _server_retry=_server_retry + 1,
+                )
+            raise
+
         except AuthenticationError:
             # RPC Error 16 - fall through to auth recovery below
             pass
