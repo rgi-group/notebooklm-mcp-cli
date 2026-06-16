@@ -226,10 +226,12 @@ class TestCreateArtifact:
         assert "code 7" in err.user_message
 
     def test_drift_error_propagates_verbatim(self, mock_client):
-        """RPCDriftError must NOT be re-wrapped into a generic ServiceError."""
+        """RPCDriftError must be wrapped in ServiceError but preserve its message."""
         mock_client.create_infographic.side_effect = RPCDriftError("izAoDd", ["wXbhsf", "ozz5Z"])
-        with pytest.raises(RPCDriftError):
+        with pytest.raises(ServiceError) as exc_info:
             create_artifact(mock_client, "nb-1", "infographic")
+        assert "izAoDd" in exc_info.value.user_message
+        assert "NOTEBOOKLM_RPC_OVERRIDES" in exc_info.value.user_message
 
 
 class TestNormalizeVideoStyle:
@@ -385,14 +387,16 @@ class TestReviseArtifact:
         assert "view-only/shared decks" in err.hint
 
     def test_drift_error_propagates_verbatim(self, mock_client):
-        """RPCDriftError must NOT be re-wrapped into a generic ServiceError."""
+        """RPCDriftError must be wrapped in ServiceError but preserve its message."""
         mock_client.revise_slide_deck.side_effect = RPCDriftError("KmcKPe", ["rc3d8d"])
-        with pytest.raises(RPCDriftError):
+        with pytest.raises(ServiceError) as exc_info:
             revise_artifact(
                 mock_client,
                 "art-123",
                 [{"slide": 1, "instruction": "Tighten the title"}],
             )
+        assert "KmcKPe" in exc_info.value.user_message
+        assert "NOTEBOOKLM_RPC_OVERRIDES" in exc_info.value.user_message
 
     def test_rpc_error_without_detail_type_preserves_original_message(self, mock_client):
         mock_client.revise_slide_deck.side_effect = RPCError(

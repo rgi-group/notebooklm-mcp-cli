@@ -104,10 +104,12 @@ class TestStartResearch:
         assert "error code 3" in str(exc_info.value)
 
     def test_drift_error_propagates_verbatim(self, mock_client):
-        """RPCDriftError must NOT be re-wrapped into a generic ServiceError."""
+        """RPCDriftError must be wrapped in ServiceError but preserve its message."""
         mock_client.start_research.side_effect = RPCDriftError("Ljjv0c", ["QA9ei"])
-        with pytest.raises(RPCDriftError):
+        with pytest.raises(ServiceError) as exc_info:
             start_research(mock_client, "nb-1", "query")
+        assert "Ljjv0c" in exc_info.value.user_message
+        assert "NOTEBOOKLM_RPC_OVERRIDES" in exc_info.value.user_message
 
     def test_drive_fast_works(self, mock_client):
         mock_client.start_research.return_value = {"task_id": "t-1"}

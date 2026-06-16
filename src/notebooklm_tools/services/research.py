@@ -256,9 +256,9 @@ def start_research(
                 f"This is likely a transient issue. Try again in a few minutes, or use --mode fast."
             ),
         ) from e
-    except RPCDriftError:
+    except RPCDriftError as e:
         # Let the actionable NOTEBOOKLM_RPC_OVERRIDES guidance reach the user verbatim.
-        raise
+        raise ServiceError(message=str(e), user_message=str(e)) from e
     except Exception as e:
         raise ServiceError(f"Failed to start research: {e}") from e
 
