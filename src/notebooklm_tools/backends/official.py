@@ -61,24 +61,68 @@ class OfficialBackend:
                 )
             self._client = genai.Client(api_key=api_key)
 
+        # In-memory job table: notebook_id -> list of artifact dicts (official
+        # ops are effectively synchronous, but poll_studio_status still works).
+        self._jobs: dict[str, list[dict[str, Any]]] = {}
+
     # ---- supported subset (implemented in phases 2-3) ----
 
     def get_notebook_sources_with_types(self, notebook_id: str) -> list[dict[str, Any]]:
         # Official backend models "notebook" as a local source set keyed by notebook_id.
         raise NotImplementedError("phase 3: source registry for official backend")
 
-    def create_audio_overview(self, notebook_id: str, **kwargs: Any) -> dict[str, Any] | None:
-        # phase 2: build a 2-host dialogue script grounded on sources, then
-        # DEFAULT_TTS_MODEL multi-speaker TTS → audio bytes → GCS → return url.
-        raise NotImplementedError("phase 2: multi-speaker TTS podcast")
+    def create_audio_overview(
+        self,
+        notebook_id: str,
+        *,
+        source_ids: list[str] | None = None,
+        format_code: int = 0,
+        length_code: int = 0,
+        language: str = "en",
+        focus_prompt: str = "",
+        sources_text: str = "",
+        target_minutes: float = 2.5,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        """Generate a multi-speaker TTS podcast and upload it to GCS.
+
+        ``focus_prompt`` carries the topic/direction; ``sources_text`` (when
+        provided by the pipeline) grounds the script. Returns a CreateResult-
+        shaped dict; the finished artifact is also recorded for poll_studio_status.
+        """
+        from . import official_audio
+
+        topic = focus_prompt.strip() or "An overview of the provided sources."
+        result = official_audio.create_podcast(
+            self._client,
+            topic=topic,
+            sources_text=sources_text,
+            target_minutes=target_minutes,
+            language=language,
+        )
+        artifact = {
+            "artifact_id": result.artifact_id,
+            "type": "audio",
+            "title": "Audio Overview (official)",
+            "status": result.status,
+            "audio_url": result.audio_url,
+            "gcs_uri": result.gcs_uri,
+            "duration_seconds": result.duration_seconds,
+        }
+        self._jobs.setdefault(notebook_id, []).append(artifact)
+        return {
+            "artifact_id": result.artifact_id,
+            "status": result.status,
+            "audio_url": result.audio_url,
+        }
 
     def create_report(self, notebook_id: str, **kwargs: Any) -> dict[str, Any] | None:
         # phase 3: Files API upload + grounded generation on DEFAULT_TEXT_MODEL.
         raise NotImplementedError("phase 3: grounded report")
 
     def poll_studio_status(self, notebook_id: str) -> list[dict[str, Any]]:
-        # phase 2: return the in-memory job table for this notebook_id.
-        return []
+        """Return artifacts produced for this notebook_id (official ops finish synchronously)."""
+        return list(self._jobs.get(notebook_id, []))
 
     # ---- explicitly unsupported (NotebookLM-only) ----
 

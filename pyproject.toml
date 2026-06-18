@@ -37,6 +37,13 @@ dependencies = [
     "typing_extensions>=4.4.0; python_version < '3.12'",
 ]
 
+# Official backend (Vertex AI / google-genai) — install with: pip install '.[official]'
+[project.optional-dependencies]
+official = [
+    "google-genai>=1.0.0",
+    "google-cloud-storage>=2.0.0",
+]
+
 
 
 [dependency-groups]
