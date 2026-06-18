@@ -163,7 +163,6 @@ def _credless_backend() -> OfficialBackend:
 @pytest.mark.parametrize(
     ("method", "expected_op"),
     [
-        ("create_video_overview", "video"),
         ("create_infographic", "infographic"),
         ("create_slide_deck", "slide_deck"),
         ("generate_mind_map", "mind_map"),

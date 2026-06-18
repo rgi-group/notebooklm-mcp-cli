@@ -161,15 +161,53 @@ class OfficialBackend:
             "report_content": result["report_content"],
         }
 
+    def create_video_overview(
+        self,
+        notebook_id: str,
+        *,
+        source_ids: list[str] | None = None,
+        format_code: int = 0,
+        visual_style_code: int | None = None,
+        visual_style_prompt: str = "",
+        language: str = "en",
+        focus_prompt: str = "",
+        duration_seconds: int | None = None,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        """Generate a Veo video and upload it to GCS.
+
+        ``focus_prompt`` carries the scene/direction; ``visual_style_prompt`` the
+        style. Veo is cost-heavy — duration defaults are kept short (env-tunable).
+        Returns a CreateResult-shaped dict; the artifact is recorded for polling.
+        """
+        from . import official_video
+
+        prompt = focus_prompt.strip() or "A short cinematic clip illustrating the topic."
+        kw: dict[str, Any] = {"prompt": prompt, "style_prompt": visual_style_prompt}
+        if duration_seconds is not None:
+            kw["duration_seconds"] = duration_seconds
+        result = official_video.create_video(self._client, **kw)
+        artifact = {
+            "artifact_id": result["artifact_id"],
+            "type": "video",
+            "title": "Video Overview (official)",
+            "status": result["status"],
+            "video_url": result["video_url"],
+            "gcs_uri": result["gcs_uri"],
+            "duration_seconds": result["duration_seconds"],
+        }
+        self._jobs.setdefault(notebook_id, []).append(artifact)
+        return {
+            "artifact_id": result["artifact_id"],
+            "status": result["status"],
+            "video_url": result["video_url"],
+        }
+
     def poll_studio_status(self, notebook_id: str) -> list[dict[str, Any]]:
         """Return artifacts produced for this notebook_id (official ops finish synchronously)."""
         return list(self._jobs.get(notebook_id, []))
 
     # ---- explicitly unsupported (NotebookLM-only) ----
-
-    def create_video_overview(self, *a: Any, **k: Any) -> Any:
-        # Optional future: route to Veo (DEFAULT_VIDEO_MODEL). Unsupported for now.
-        raise UnsupportedOnBackend("video", self.backend_name)
 
     def create_infographic(self, *a: Any, **k: Any) -> Any:
         raise UnsupportedOnBackend("infographic", self.backend_name)

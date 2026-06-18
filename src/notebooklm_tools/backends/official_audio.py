@@ -148,15 +148,20 @@ def synthesize(client: Any, script: str) -> tuple[bytes, str]:
 # ---------- GCS ----------
 
 
-def upload_to_gcs(wav_bytes: bytes, blob_name: str) -> tuple[str, str]:
-    """Upload WAV to GCS via ADC. Returns (gs_uri, https_url)."""
+def upload_to_gcs(
+    data: bytes, blob_name: str, *, content_type: str = "audio/wav"
+) -> tuple[str, str]:
+    """Upload bytes to GCS via ADC. Returns (gs_uri, https_url).
+
+    Shared by audio (WAV) and video (MP4) — pass the appropriate content_type.
+    """
     from google.cloud import storage
 
     project = os.environ.get("GOOGLE_CLOUD_PROJECT")
     client = storage.Client(project=project)
     bucket = client.bucket(GCS_BUCKET)
     blob = bucket.blob(blob_name)
-    blob.upload_from_string(wav_bytes, content_type="audio/wav")
+    blob.upload_from_string(data, content_type=content_type)
     gs_uri = f"gs://{GCS_BUCKET}/{blob_name}"
     https_url = f"https://storage.googleapis.com/{GCS_BUCKET}/{blob_name}"
     return gs_uri, https_url
