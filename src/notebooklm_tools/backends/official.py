@@ -27,7 +27,7 @@ from .errors import UnsupportedOnBackend
 
 # Newest Gemini Flash ids — Chris prefers the latest Flash models. Override via env.
 DEFAULT_TTS_MODEL = os.environ.get("NOTEBOOKLM_OFFICIAL_TTS_MODEL", "gemini-2.5-flash-preview-tts")
-DEFAULT_TEXT_MODEL = os.environ.get("NOTEBOOKLM_OFFICIAL_TEXT_MODEL", "gemini-3.5-flash")
+DEFAULT_TEXT_MODEL = os.environ.get("NOTEBOOKLM_OFFICIAL_TEXT_MODEL", "gemini-2.5-flash")
 DEFAULT_VIDEO_MODEL = os.environ.get("NOTEBOOKLM_OFFICIAL_VIDEO_MODEL", "veo-3.1-generate-preview")
 
 
