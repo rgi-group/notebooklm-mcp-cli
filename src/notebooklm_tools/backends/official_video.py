@@ -17,7 +17,9 @@ from typing import Any
 
 from .official_audio import GCS_BUCKET, upload_to_gcs  # noqa: F401 (bucket re-exported)
 
-VIDEO_MODEL = os.environ.get("NOTEBOOKLM_OFFICIAL_VIDEO_MODEL", "veo-3.1-generate-preview")
+# veo-3.0-generate-001 (GA) is verified working on Vertex for b1ngo-463301.
+# The veo-3.1-*-preview models 404 there (need allowlisting) — set via env once granted.
+VIDEO_MODEL = os.environ.get("NOTEBOOKLM_OFFICIAL_VIDEO_MODEL", "veo-3.0-generate-001")
 GCS_VIDEO_PREFIX = os.environ.get("NOTEBOOKLM_OFFICIAL_VIDEO_PREFIX", "official-videos")
 DEFAULT_DURATION = int(os.environ.get("NOTEBOOKLM_OFFICIAL_VIDEO_SECONDS", "8"))
 DEFAULT_ASPECT = os.environ.get("NOTEBOOKLM_OFFICIAL_VIDEO_ASPECT", "16:9")
