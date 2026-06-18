@@ -119,9 +119,47 @@ class OfficialBackend:
             "audio_url": result.audio_url,
         }
 
-    def create_report(self, notebook_id: str, **kwargs: Any) -> dict[str, Any] | None:
-        # phase 3: Files API upload + grounded generation on DEFAULT_TEXT_MODEL.
-        raise NotImplementedError("phase 3: grounded report")
+    def create_report(
+        self,
+        notebook_id: str,
+        *,
+        source_ids: list[str] | None = None,
+        report_format: str = "Briefing Doc",
+        custom_prompt: str = "",
+        language: str = "en",
+        sources_text: str = "",
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        """Generate a grounded markdown report on the google-genai TEXT model.
+
+        ``custom_prompt`` carries the topic/direction; ``sources_text`` (when
+        provided by the pipeline) grounds the report. Returns a CreateResult-
+        shaped dict; the finished artifact is also recorded for poll_studio_status.
+        """
+        from . import official_report
+
+        topic = custom_prompt.strip() or "A report synthesizing the provided sources."
+        result = official_report.create_report(
+            self._client,
+            topic=topic,
+            sources_text=sources_text,
+            report_format=report_format,
+            language=language,
+        )
+        artifact = {
+            "artifact_id": result["artifact_id"],
+            "type": "report",
+            "title": "Report (official)",
+            "status": result["status"],
+            "report_content": result["report_content"],
+            "report_format": result["report_format"],
+        }
+        self._jobs.setdefault(notebook_id, []).append(artifact)
+        return {
+            "artifact_id": result["artifact_id"],
+            "status": result["status"],
+            "report_content": result["report_content"],
+        }
 
     def poll_studio_status(self, notebook_id: str) -> list[dict[str, Any]]:
         """Return artifacts produced for this notebook_id (official ops finish synchronously)."""
