@@ -68,8 +68,11 @@ class OfficialBackend:
     # ---- supported subset (implemented in phases 2-3) ----
 
     def get_notebook_sources_with_types(self, notebook_id: str) -> list[dict[str, Any]]:
-        # Official backend models "notebook" as a local source set keyed by notebook_id.
-        raise NotImplementedError("phase 3: source registry for official backend")
+        # Official backend has no NotebookLM-side sources. Return a single virtual
+        # source so the studio service's source-resolution check passes; the actual
+        # content is supplied via focus_prompt/sources_text. (Phase 3 adds a real
+        # per-notebook source registry for grounded report/query.)
+        return [{"id": f"official:{notebook_id}", "type": "virtual"}]
 
     def create_audio_overview(
         self,

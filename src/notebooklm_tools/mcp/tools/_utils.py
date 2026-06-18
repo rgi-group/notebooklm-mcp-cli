@@ -48,6 +48,7 @@ def error_result(
 
 # Global state
 _client: NotebookLMClient | None = None
+_official_backend: object | None = None  # OfficialBackend (Vertex), lazily built
 _client_lock = threading.Lock()
 _query_timeout: float = float(os.environ.get("NOTEBOOKLM_QUERY_TIMEOUT", "120.0"))
 
@@ -67,8 +68,20 @@ def get_client() -> NotebookLMClient:
     """Get or create the API client (thread-safe).
 
     Tries environment variables first, falls back to cached tokens from auth CLI.
+
+    When NOTEBOOKLM_BACKEND=official, returns the Vertex/google-genai backend
+    instead (no cookie auth). The NotebookLM path below is unchanged.
     """
-    global _client
+    global _client, _official_backend
+
+    from notebooklm_tools.backends import get_backend_name
+    from notebooklm_tools.backends import get_client as _get_backend_client
+
+    if get_backend_name() == "official":
+        with _client_lock:
+            if _official_backend is None:
+                _official_backend = _get_backend_client()
+            return _official_backend  # type: ignore[return-value]
 
     with _client_lock:
         # Profile-change detection (only when env-var auth is not in use).
@@ -137,9 +150,10 @@ def get_client() -> NotebookLMClient:
 
 def reset_client() -> None:
     """Reset the client to force re-initialization."""
-    global _client
+    global _client, _official_backend
     with _client_lock:
         _client = None
+        _official_backend = None
 
 
 def get_mcp_instance() -> Any:
